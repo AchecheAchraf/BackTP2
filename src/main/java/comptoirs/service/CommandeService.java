@@ -2,6 +2,7 @@ package comptoirs.service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.NoSuchElementException;
 
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
@@ -105,10 +106,27 @@ public class CommandeService {
      *                                                         pas positive
      */
     @Transactional
-    public Ligne ajouterLigne(int commandeNum, int produitRef, @Positive int quantite) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+    public Ligne ajouterLigne(Integer commandeNum, Integer produitRef, @Positive int quantite) {
+        var verifProduit = produitDao.findById(produitRef).orElseThrow(() -> new NoSuchElementException("Produit introuvable avec la référence : " + produitRef));
+        var verifCommande = commandeDao.findById(commandeNum).orElseThrow(() -> new NoSuchElementException("Commande introuvable avec le numéro : " + commandeNum));
+
+        if (verifCommande != null && verifCommande.getEnvoyeele() == null && quantite > 0 && verifProduit.getUnitesEnStock() >= quantite) {
+            Ligne ligne = new Ligne();
+            ligne.setProduit(verifProduit);
+            ligne.setQuantite(quantite);
+            ligne.setCommande(verifCommande);
+
+            ligneDao.save(ligne);
+
+            verifProduit.setUnitesCommandees(verifProduit.getUnitesCommandees() + quantite);
+            produitDao.save(verifProduit);
+
+            return ligne;
+        } else {
+            throw new IllegalStateException("La ligne n'a pas été ajoutée");
+        }
     }
+
 
     /**
      * Service métier : Enregistre l'expédition d'une commande connue par sa clé
@@ -130,7 +148,19 @@ public class CommandeService {
      */
     @Transactional
     public Commande enregistreExpedition(int commandeNum) {
-        // TODO : implémenter cette méthode
-        throw new UnsupportedOperationException("Pas encore implémenté");
+        var commande = commandeDao.findById(commandeNum).orElseThrow();
+        if (commande.getEnvoyeele() != null) {
+            throw new IllegalStateException("Commande déjà expédiée");
+        }
+        commande.setEnvoyeele(LocalDate.now());
+        commande.getLignes().forEach(ligne -> {
+            var produit = ligne.getProduit();
+            produit.setUnitesEnStock(produit.getUnitesEnStock() - ligne.getQuantite());
+            produit.setUnitesCommandees(produit.getUnitesCommandees() - ligne.getQuantite());
+        });
+        return commande;
     }
 }
+
+
+
